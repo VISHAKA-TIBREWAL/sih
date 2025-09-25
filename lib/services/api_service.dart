@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 /// Railway Control Center API Service
 /// 
@@ -9,7 +11,7 @@ class ApiService {
   
   // Environment configuration
   static const Map<String, String> _baseUrls = {
-    'development': 'http://localhost:5000/api',
+    'development': 'http://localhost:8000/api',
     'staging': 'https://staging-api.indianrailways.gov.in/api',
     'production': 'https://api.indianrailways.gov.in/api',
   };
@@ -184,6 +186,25 @@ class ApiService {
     try {
       _log('Getting dashboard stats');
       
+      try {
+        final response = await http.get(Uri.parse('$baseUrl/dashboard/summary'));
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final stats = DashboardStats(
+            totalTrains: data['total_trains'] ?? 0,
+            activeTrains: data['total_trains'] ?? 0,
+            delayedTrains: data['delayed'] ?? 0,
+            onTimeTrains: data['on_time'] ?? 0,
+            criticalAlerts: 0,
+            averageDelay: 0.0,
+            onTimePerformance: data['operational_efficiency']?.toDouble() ?? 0.0,
+          );
+          return ApiResponse.success(stats);
+        }
+      } catch (e) {
+        _log('Backend not available, using mock data');
+      }
+      
       if (_environment == 'development') {
         await Future.delayed(const Duration(milliseconds: 700));
         
@@ -212,6 +233,102 @@ class ApiService {
       
     } catch (e) {
       return ApiResponse.error(ApiError.unknown('Failed to get stats'));
+    }
+  }
+
+  Future<ApiResponse<TrainDetails>> getTrainDetails(String trainId) async {
+    try {
+      _log('Getting detailed train info for $trainId');
+      
+      try {
+        final response = await http.get(Uri.parse('$baseUrl/trains/$trainId'));
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final details = TrainDetails.fromJson(data);
+          return ApiResponse.success(details);
+        }
+      } catch (e) {
+        _log('Backend not available for train details, using mock data');
+      }
+      
+      // Fallback mock data
+      final mockDetails = TrainDetails(
+        id: trainId,
+        name: 'Sample Express',
+        route: 'New Delhi - Mumbai',
+        currentStation: 'Gwalior Junction',
+        nextStation: 'Jhansi Junction',
+        status: 'On Time',
+        delay: 0,
+        speed: 85,
+        departureTime: '14:30',
+        arrivalTime: '20:45',
+        coaches: 18,
+        passengers: 1250,
+        capacity: 1400,
+        engineType: 'Electric',
+        driver: 'Sample Driver',
+        guard: 'Sample Guard',
+        distanceCovered: 345,
+        totalDistance: 1384,
+        coordinates: {'lat': 26.2183, 'lng': 78.1828},
+        signal: 'Green',
+        trackCondition: 'Good',
+        weather: 'Clear',
+      );
+      
+      return ApiResponse.success(mockDetails);
+      
+    } catch (e) {
+      return ApiResponse.error(ApiError.unknown('Failed to get train details'));
+    }
+  }
+
+  Future<ApiResponse<TrackInfo>> getTrainTrackInfo(String trainId) async {
+    try {
+      _log('Getting track info for $trainId');
+      
+      try {
+        final response = await http.get(Uri.parse('$baseUrl/trains/$trainId/track'));
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final trackInfo = TrackInfo.fromJson(data);
+          return ApiResponse.success(trackInfo);
+        }
+      } catch (e) {
+        _log('Backend not available for track info, using mock data');
+      }
+      
+      // Fallback mock data
+      final mockTrackInfo = TrackInfo(
+        trainId: trainId,
+        trainName: 'Sample Express',
+        currentLocation: {
+          'station': 'Gwalior Junction',
+          'coordinates': {'lat': 26.2183, 'lng': 78.1828},
+          'signal': 'Green',
+          'trackCondition': 'Good'
+        },
+        routeInfo: {
+          'route': 'New Delhi - Mumbai Central',
+          'distanceCovered': 345,
+          'totalDistance': 1384,
+          'progressPercentage': 24.9
+        },
+        operationalStatus: {
+          'speed': 85,
+          'status': 'On Time',
+          'delay': 0,
+          'weather': 'Clear'
+        },
+        nextStation: 'Jhansi Junction',
+        estimatedArrival: '20:45',
+      );
+      
+      return ApiResponse.success(mockTrackInfo);
+      
+    } catch (e) {
+      return ApiResponse.error(ApiError.unknown('Failed to get track info'));
     }
   }
 }
@@ -351,4 +468,109 @@ class DashboardStats {
     required this.averageDelay,
     required this.onTimePerformance,
   });
+}
+
+class TrainDetails {
+  final String id;
+  final String name;
+  final String route;
+  final String currentStation;
+  final String nextStation;
+  final String status;
+  final int delay;
+  final int speed;
+  final String departureTime;
+  final String arrivalTime;
+  final int coaches;
+  final int passengers;
+  final int capacity;
+  final String engineType;
+  final String driver;
+  final String guard;
+  final int distanceCovered;
+  final int totalDistance;
+  final Map<String, dynamic> coordinates;
+  final String signal;
+  final String trackCondition;
+  final String weather;
+
+  TrainDetails({
+    required this.id,
+    required this.name,
+    required this.route,
+    required this.currentStation,
+    required this.nextStation,
+    required this.status,
+    required this.delay,
+    required this.speed,
+    required this.departureTime,
+    required this.arrivalTime,
+    required this.coaches,
+    required this.passengers,
+    required this.capacity,
+    required this.engineType,
+    required this.driver,
+    required this.guard,
+    required this.distanceCovered,
+    required this.totalDistance,
+    required this.coordinates,
+    required this.signal,
+    required this.trackCondition,
+    required this.weather,
+  });
+
+  factory TrainDetails.fromJson(Map<String, dynamic> json) => TrainDetails(
+    id: json['id'],
+    name: json['name'],
+    route: json['route'],
+    currentStation: json['current_station'],
+    nextStation: json['next_station'],
+    status: json['status'],
+    delay: json['delay'] ?? 0,
+    speed: json['speed'] ?? 0,
+    departureTime: json['departure_time'] ?? '',
+    arrivalTime: json['arrival_time'] ?? '',
+    coaches: json['coaches'] ?? 0,
+    passengers: json['passengers'] ?? 0,
+    capacity: json['capacity'] ?? 0,
+    engineType: json['engine_type'] ?? '',
+    driver: json['driver'] ?? '',
+    guard: json['guard'] ?? '',
+    distanceCovered: json['distance_covered'] ?? 0,
+    totalDistance: json['total_distance'] ?? 0,
+    coordinates: json['coordinates'] ?? {},
+    signal: json['signal'] ?? '',
+    trackCondition: json['track_condition'] ?? '',
+    weather: json['weather'] ?? '',
+  );
+}
+
+class TrackInfo {
+  final String trainId;
+  final String trainName;
+  final Map<String, dynamic> currentLocation;
+  final Map<String, dynamic> routeInfo;
+  final Map<String, dynamic> operationalStatus;
+  final String nextStation;
+  final String estimatedArrival;
+
+  TrackInfo({
+    required this.trainId,
+    required this.trainName,
+    required this.currentLocation,
+    required this.routeInfo,
+    required this.operationalStatus,
+    required this.nextStation,
+    required this.estimatedArrival,
+  });
+
+  factory TrackInfo.fromJson(Map<String, dynamic> json) => TrackInfo(
+    trainId: json['id'],
+    trainName: json['name'],
+    currentLocation: json['current_location'] ?? {},
+    routeInfo: json['route_info'] ?? {},
+    operationalStatus: json['operational_status'] ?? {},
+    nextStation: json['next_station'] ?? '',
+    estimatedArrival: json['estimated_arrival'] ?? '',
+  );
 }

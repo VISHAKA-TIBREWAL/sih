@@ -7,8 +7,7 @@ import 'override_controls_screen.dart';
 import 'what_if_analysis_screen.dart';
 import 'performance_screen.dart';
 import '../utils/page_transitions_fixed.dart';
-
-// We're using Map<String, dynamic> for train data now instead of a class
+import '../services/api_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -18,20 +17,14 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProviderStateMixin {
-  // Animation controller for sidebar
   late AnimationController _sidebarController;
   late Animation<double> _sidebarAnimation;
   bool _isSidebarExpanded = true;
-  
-
-
-  // We'll use direct Maps for train data instead of a class
   
   @override
   void initState() {
     super.initState();
     
-    // Initialize sidebar animation controller
     _sidebarController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 250),
@@ -46,7 +39,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
       reverseCurve: Curves.easeInQuart,
     ));
     
-    // Start expanded
     _sidebarController.value = 1.0;
   }
   
@@ -55,8 +47,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     _sidebarController.dispose();
     super.dispose();
   }
-  
-  // Simplified initialization without time updating or data refreshing
   
   void _logout() {
     Navigator.of(context).pushReplacement(
@@ -74,8 +64,266 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
       }
     });
   }
-  
-  // Removed unused time formatting method
+
+  void _showTrainDetailsPopup(BuildContext context, String trainId) async {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return FutureBuilder<ApiResponse<TrainDetails>>(
+          future: ApiService().getTrainDetails(trainId),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return AlertDialog(
+                title: Text('Train $trainId Details'),
+                content: const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(20.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
+              );
+            }
+
+            if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.isSuccess) {
+              return AlertDialog(
+                title: Text('Train $trainId Details'),
+                content: const Text('Failed to load train details'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Close'),
+                  ),
+                ],
+              );
+            }
+
+            final train = snapshot.data!.data!;
+            return AlertDialog(
+              title: Row(
+                children: [
+                  const Icon(Icons.train, color: Color(0xFF0D47A1)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('${train.name} (${train.id})'),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildDetailSection('Route Information', [
+                        _buildDetailRow('Route', train.route),
+                        _buildDetailRow('Current Station', train.currentStation),
+                        _buildDetailRow('Next Station', train.nextStation),
+                        _buildDetailRow('Status', train.status, statusColor: train.status == 'On Time' ? Colors.green : Colors.red),
+                      ]),
+                      const SizedBox(height: 16),
+                      _buildDetailSection('Operational Details', [
+                        _buildDetailRow('Speed', '${train.speed} km/h'),
+                        _buildDetailRow('Delay', train.delay > 0 ? '${train.delay} minutes' : 'On time'),
+                        _buildDetailRow('Departure', train.departureTime),
+                        _buildDetailRow('Expected Arrival', train.arrivalTime),
+                      ]),
+                      const SizedBox(height: 16),
+                      _buildDetailSection('Train Composition', [
+                        _buildDetailRow('Coaches', '${train.coaches}'),
+                        _buildDetailRow('Engine Type', train.engineType),
+                        _buildDetailRow('Passengers', '${train.passengers} / ${train.capacity}'),
+                        _buildDetailRow('Occupancy', '${((train.passengers / train.capacity) * 100).toStringAsFixed(1)}%'),
+                      ]),
+                      const SizedBox(height: 16),
+                      _buildDetailSection('Crew Information', [
+                        _buildDetailRow('Driver', train.driver),
+                        _buildDetailRow('Guard', train.guard),
+                      ]),
+                      const SizedBox(height: 16),
+                      _buildDetailSection('Track & Weather', [
+                        _buildDetailRow('Signal Status', train.signal, statusColor: train.signal == 'Green' ? Colors.green : Colors.amber),
+                        _buildDetailRow('Track Condition', train.trackCondition),
+                        _buildDetailRow('Weather', train.weather),
+                        _buildDetailRow('Distance Progress', '${train.distanceCovered} / ${train.totalDistance} km'),
+                      ]),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showTrainTrackPopup(BuildContext context, String trainId) async {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return FutureBuilder<ApiResponse<TrackInfo>>(
+          future: ApiService().getTrainTrackInfo(trainId),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return AlertDialog(
+                title: Text('Track Train $trainId'),
+                content: const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(20.0),
+                    child: CircularProgressIndicator(),
+                  ),
+                ),
+              );
+            }
+
+            if (snapshot.hasError || !snapshot.hasData || !snapshot.data!.isSuccess) {
+              return AlertDialog(
+                title: Text('Track Train $trainId'),
+                content: const Text('Failed to load track information'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Close'),
+                  ),
+                ],
+              );
+            }
+
+            final track = snapshot.data!.data!;
+            final currentLoc = track.currentLocation;
+            final routeInfo = track.routeInfo;
+            final opStatus = track.operationalStatus;
+
+            return AlertDialog(
+              title: Row(
+                children: [
+                  const Icon(Icons.my_location, color: Colors.blue),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('Tracking ${track.trainName}'),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildDetailSection('Current Location', [
+                        _buildDetailRow('Station', currentLoc['station'] ?? 'Unknown'),
+                        _buildDetailRow('Signal', currentLoc['signal'] ?? 'Unknown', 
+                          statusColor: currentLoc['signal'] == 'Green' ? Colors.green : 
+                                     currentLoc['signal'] == 'Yellow' ? Colors.amber : Colors.red),
+                        _buildDetailRow('Track Condition', currentLoc['trackCondition'] ?? 'Unknown'),
+                        if (currentLoc['coordinates'] != null) 
+                          _buildDetailRow('Coordinates', 
+                            '${currentLoc['coordinates']['lat']?.toStringAsFixed(4)}, ${currentLoc['coordinates']['lng']?.toStringAsFixed(4)}'),
+                      ]),
+                      const SizedBox(height: 16),
+                      _buildDetailSection('Route Progress', [
+                        _buildDetailRow('Route', routeInfo['route'] ?? 'Unknown'),
+                        _buildDetailRow('Distance Covered', '${routeInfo['distanceCovered'] ?? 0} km'),
+                        _buildDetailRow('Total Distance', '${routeInfo['totalDistance'] ?? 0} km'),
+                        _buildDetailRow('Progress', '${routeInfo['progressPercentage']?.toStringAsFixed(1) ?? 0}%'),
+                      ]),
+                      const SizedBox(height: 16),
+                      Container(
+                        width: double.infinity,
+                        child: LinearProgressIndicator(
+                          value: (routeInfo['progressPercentage'] ?? 0) / 100,
+                          backgroundColor: Colors.grey[300],
+                          valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF0D47A1)),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildDetailSection('Operational Status', [
+                        _buildDetailRow('Current Speed', '${opStatus['speed'] ?? 0} km/h'),
+                        _buildDetailRow('Status', opStatus['status'] ?? 'Unknown'),
+                        _buildDetailRow('Delay', opStatus['delay'] != null ? '${opStatus['delay']} minutes' : 'Unknown'),
+                        _buildDetailRow('Weather', opStatus['weather'] ?? 'Unknown'),
+                      ]),
+                      const SizedBox(height: 16),
+                      _buildDetailSection('Next Station', [
+                        _buildDetailRow('Station', track.nextStation),
+                        _buildDetailRow('ETA', track.estimatedArrival),
+                      ]),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailSection(String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF0D47A1),
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...children,
+      ],
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value, {Color? statusColor}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              '$label:',
+              style: const TextStyle(
+                color: Colors.grey,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: statusColor ?? Colors.black,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatTime(DateTime dateTime) {
+    return '${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -90,8 +338,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
         ),
         child: Row(
           children: [
-            // Section 1: Navigation Sidebar (Left)
-            // Use ClipRect to ensure contents don't overflow during animation
             ClipRect(
               child: AnimatedBuilder(
                 animation: _sidebarAnimation,
@@ -100,13 +346,10 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                 },
               ),
             ),
-            // Section 2: Main Content (Right)
             Expanded(
               child: Column(
                 children: [
-                  // Top bar with hamburger menu
                   _buildTopAppBar(),
-                  // Scrollable content
                   Expanded(
                     child: SingleChildScrollView(
                       padding: const EdgeInsets.all(32.0),
@@ -133,7 +376,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     );
   }
   
-  // WIDGET: Top app bar with hamburger menu
   Widget _buildTopAppBar() {
     return Container(
       height: 60,
@@ -164,277 +406,207 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     );
   }
 
-  // WIDGET: The left navigation sidebar
   Widget _buildSidebar() {
-    // Calculate width based on animation value
     final double sidebarWidth = _sidebarAnimation.value * 250;
     
-    // Don't render anything when fully collapsed
     if (sidebarWidth < 1) {
       return const SizedBox(width: 0);
     }
-    
-    // Only show labels when sidebar width is sufficient
-    final bool showLabels = sidebarWidth > 80;
-    
+
     return Container(
       width: sidebarWidth,
-      color: Colors.white,
+      height: double.infinity,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          right: BorderSide(color: Color(0xFFE0E0E0)),
+        ),
+      ),
       child: Column(
         children: [
-          // Header with logo
-          if (showLabels)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16.0, 24.0, 16.0, 8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Hero(
-                        tag: 'app_logo',
-                        child: const Icon(Icons.train_rounded, size: 28, color: Color(0xFF0D47A1)),
-                      ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Hero(
-                          tag: 'app_title',
-                          child: const Material(
-                            color: Colors.transparent,
-                            child: Text(
-                              'Indian Railways', 
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Control Center', 
-                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 16),
-                  const Divider(height: 1),
-                ],
-              ),
-            ),
-            
-          // Navigation items in scrollable area
-          Expanded(
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                child: Column(
-                  children: [
-                    _buildNavigationItem(
-                      icon: Icons.dashboard, 
-                      title: showLabels ? 'Dashboard' : '', 
-                      isSelected: true,
-                    ),
-                    _buildNavigationItem(
-                      icon: Icons.map, 
-                      title: showLabels ? 'Track Map' : '',
-                      onTap: () {
-                        Navigator.of(context).pushReplacement(
-                          PageRoutes.fadeThrough(const TrackMapScreen()),
-                        );
-                      },
-                    ),
-                    _buildNavigationItem(
-                      icon: Icons.lightbulb_outline, 
-                      title: showLabels ? 'AI Recommendations' : '',
-                      onTap: () {
-                        Navigator.of(context).pushReplacement(
-                          PageRoutes.fadeThrough(const AiRecommendationsScreen()),
-                        );
-                      },
-                    ),
-                    _buildNavigationItem(
-                      icon: Icons.rule, 
-                      title: showLabels ? 'Override Controls' : '',
-                      onTap: () {
-                        Navigator.of(context).pushReplacement(
-                          PageRoutes.fadeThrough(const OverrideControlsScreen()),
-                        );
-                      },
-                    ),
-                    _buildNavigationItem(
-                      icon: Icons.analytics_outlined, 
-                      title: showLabels ? 'What-if Analysis' : '',
-                      onTap: () {
-                        Navigator.of(context).pushReplacement(
-                          PageRoutes.fadeThrough(const WhatIfAnalysisScreen()),
-                        );
-                      },
-                    ),
-                    _buildNavigationItem(
-                      icon: Icons.bar_chart, 
-                      title: showLabels ? 'Performance' : '',
-                      onTap: () {
-                        Navigator.of(context).pushReplacement(
-                          PageRoutes.fadeThrough(const PerformanceScreen()),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          
-          // Footer with logout button
-          Padding(
-            padding: const EdgeInsets.fromLTRB(0, 8.0, 0, 16.0),
-            child: Column(
+          Container(
+            padding: const EdgeInsets.all(24),
+            child: Row(
               children: [
-                if (showLabels) const Divider(height: 1),
-                _buildNavigationItem(
-                  icon: Icons.logout, 
-                  title: showLabels ? 'Logout' : '',
-                  onTap: _logout,
-                ),
+                const Icon(Icons.train, color: Color(0xFF0D47A1), size: 32),
+                if (_sidebarAnimation.value > 0.3) ...[
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Railway Control',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF0D47A1),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              children: [
+                _buildSidebarItem(Icons.dashboard, 'Dashboard', true, null),
+                _buildSidebarItem(Icons.map, 'Track Map', false, () {
+                  Navigator.of(context).push(
+                    PageRoutes.fadeThrough(const TrackMapScreen()),
+                  );
+                }),
+                _buildSidebarItem(Icons.psychology, 'AI Recommendations', false, () {
+                  Navigator.of(context).push(
+                    PageRoutes.fadeThrough(const AiRecommendationsScreen()),
+                  );
+                }),
+                _buildSidebarItem(Icons.settings, 'Override Controls', false, () {
+                  Navigator.of(context).push(
+                    PageRoutes.fadeThrough(const OverrideControlsScreen()),
+                  );
+                }),
+                _buildSidebarItem(Icons.analytics, 'What-If Analysis', false, () {
+                  Navigator.of(context).push(
+                    PageRoutes.fadeThrough(const WhatIfAnalysisScreen()),
+                  );
+                }),
+                _buildSidebarItem(Icons.speed, 'Performance', false, () {
+                  Navigator.of(context).push(
+                    PageRoutes.fadeThrough(const PerformanceScreen()),
+                  );
+                }),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(16),
+            child: _buildSidebarItem(Icons.logout, 'Logout', false, _logout),
           ),
         ],
       ),
     );
   }
 
-  // WIDGET: Helper for a single item in the navigation sidebar
-  Widget _buildNavigationItem({
-    required IconData icon, 
-    required String title, 
-    bool isSelected = false,
-    VoidCallback? onTap,
-  }) {
-    final bool isCollapsed = title.isEmpty;
-    
-    if (isCollapsed) {
-      return _HoverButton(
-        isSelected: isSelected,
-        icon: icon,
-        onTap: onTap,
-        tooltipText: icon == Icons.dashboard ? 'Dashboard' :
-                     icon == Icons.map ? 'Track Map' :
-                     icon == Icons.lightbulb_outline ? 'AI Recommendations' :
-                     icon == Icons.rule ? 'Override Controls' :
-                     icon == Icons.analytics_outlined ? 'What-if Analysis' :
-                     icon == Icons.bar_chart ? 'Performance' :
-                     icon == Icons.logout ? 'Logout' : '',
-      );
-    } else {
-      return _HoverListTile(
-        isSelected: isSelected,
-        icon: icon,
-        title: title,
-        onTap: onTap,
+  Widget _buildSidebarItem(IconData icon, String title, bool isSelected, VoidCallback? onTap) {
+    if (_sidebarAnimation.value < 0.3) {
+      return Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFE3F2FD) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: IconButton(
+          icon: Icon(
+            icon,
+            size: 22,
+            color: isSelected ? const Color(0xFF0D47A1) : Colors.grey[600],
+          ),
+          onPressed: onTap,
+          tooltip: title,
+        ),
       );
     }
-  }
 
-  // WIDGET: Header for the main content area
-  Widget _buildHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Dashboard',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Railway Traffic Control System',
-              style: TextStyle(color: Colors.grey[600], fontSize: 16),
-            ),
-          ],
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 2),
+      decoration: BoxDecoration(
+        color: isSelected ? const Color(0xFFE3F2FD) : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ListTile(
+        leading: Icon(
+          icon,
+          size: 20,
+          color: isSelected ? const Color(0xFF0D47A1) : Colors.grey[600],
         ),
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.red,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Text(
-                '1 Critical',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-              ),
-            ),
-            const SizedBox(width: 16),
-            Text(
-              '${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}, ${_formatTime(DateTime.now())}',
-              style: const TextStyle(color: Colors.grey, fontSize: 14),
-            ),
-          ],
+        title: Text(
+          title,
+          style: TextStyle(
+            color: isSelected ? const Color(0xFF0D47A1) : Colors.grey[800],
+            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+          ),
         ),
-      ],
+        onTap: onTap,
+        dense: true,
+      ),
     );
   }
-  
-  String _formatTime(DateTime time) {
-    final hour = time.hour > 12 ? time.hour - 12 : (time.hour == 0 ? 12 : time.hour);
-    final minute = time.minute.toString().padLeft(2, '0');
-    final second = time.second.toString().padLeft(2, '0');
-    final period = time.hour >= 12 ? 'PM' : 'AM';
-    return '$hour:$minute:$second $period';
-  }
 
-  // WIDGET: The red critical alert box
-  Widget _buildCriticalAlerts() {
+  Widget _buildHeader() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Critical Alerts',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        Row(
+          children: [
+            const Text(
+              'Railway Operations Dashboard',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            ),
+            const Spacer(),
+            Text(
+              'Last updated: ${_formatTime(DateTime.now())}',
+              style: const TextStyle(color: Colors.grey),
+            ),
+          ],
         ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.red.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.red),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.error, color: Colors.red),
-              const SizedBox(width: 12),
-              Expanded(
-                child: const Text(
-                  'Signal failure at Junction A - Track 3',
-                  style: TextStyle(color: Colors.red, fontWeight: FontWeight.w500),
-                ),
-              ),
-              TextButton(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Alert acknowledged'),
-                      backgroundColor: Color(0xFF0D47A1),
-                    ),
-                  );
-                },
-                style: TextButton.styleFrom(foregroundColor: Colors.red[700]),
-                child: const Text('Acknowledge'),
-              ),
-            ],
-          ),
+        const SizedBox(height: 8),
+        const Text(
+          'Real-time monitoring and control center',
+          style: TextStyle(fontSize: 16, color: Colors.grey),
         ),
       ],
     );
   }
 
-  // WIDGET: The main section with all the train status cards
+  Widget _buildCriticalAlerts() {
+    return Card(
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.red[50],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.red[200]!),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.warning, color: Colors.red[700], size: 24),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Signal failure detected at Junction A - Train 12002 delayed by 15 minutes',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    '2 minutes ago',
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('Alert acknowledged'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red[700]),
+              child: const Text('Acknowledge'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildRealTimeTrainStatus() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -507,7 +679,6 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     );
   }
 
-  // WIDGET: A single card for one train's status with hover effect
   Widget _buildTrainCard({
     required String trainNumber,
     required String trainName,
@@ -562,23 +733,13 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
               children: [
                 TextButton(
                   onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Details for Train $trainNumber'),
-                        backgroundColor: const Color(0xFF0D47A1),
-                      ),
-                    );
+                    _showTrainDetailsPopup(context, trainNumber);
                   }, 
                   child: const Text('Details')
                 ),
                 ElevatedButton(
                   onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Tracking Train $trainNumber'),
-                        backgroundColor: Colors.blue,
-                      ),
-                    );
+                    _showTrainTrackPopup(context, trainNumber);
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue,
@@ -643,16 +804,15 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
           value: '5,600',
         ),
         _buildSummaryCard(
-          icon: Icons.insights,
-          iconColor: Colors.purple,
-          title: 'Avg Delay',
-          value: '15 min',
+          icon: Icons.speed,
+          iconColor: Colors.orange,
+          title: 'Avg Speed',
+          value: '95 km/h',
         ),
       ],
     );
   }
-  
-  // WIDGET: A single card for the summary section with hover effect
+
   Widget _buildSummaryCard({
     required IconData icon,
     required Color iconColor,
@@ -699,139 +859,18 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   }
 }
 
-// Hover widgets for navigation items
-class _HoverButton extends StatefulWidget {
-  final bool isSelected;
-  final IconData icon;
-  final VoidCallback? onTap;
-  final String tooltipText;
-  
-  const _HoverButton({
-    required this.isSelected,
-    required this.icon,
-    this.onTap,
-    required this.tooltipText,
-  });
-  
-  @override
-  _HoverButtonState createState() => _HoverButtonState();
-}
-
-class _HoverButtonState extends State<_HoverButton> {
-  bool isHovering = false;
-  
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => isHovering = true),
-      onExit: (_) => setState(() => isHovering = false),
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        decoration: BoxDecoration(
-          color: widget.isSelected 
-              ? const Color(0xFFE3F2FD) 
-              : isHovering 
-                  ? const Color(0xFFF5F5F5)
-                  : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: IconButton(
-          icon: Icon(
-            widget.icon,
-            size: 22,
-            color: widget.isSelected 
-                ? const Color(0xFF0D47A1) 
-                : isHovering
-                    ? const Color(0xFF42A5F5)
-                    : Colors.grey[600],
-          ),
-          onPressed: widget.onTap,
-          tooltip: widget.tooltipText,
-        ),
-      ),
-    );
-  }
-}
-
-class _HoverListTile extends StatefulWidget {
-  final bool isSelected;
-  final IconData icon;
-  final String title;
-  final VoidCallback? onTap;
-  
-  const _HoverListTile({
-    required this.isSelected,
-    required this.icon,
-    required this.title,
-    this.onTap,
-  });
-  
-  @override
-  _HoverListTileState createState() => _HoverListTileState();
-}
-
-class _HoverListTileState extends State<_HoverListTile> {
-  bool isHovering = false;
-  
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => isHovering = true),
-      onExit: (_) => setState(() => isHovering = false),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        decoration: BoxDecoration(
-          color: widget.isSelected 
-              ? const Color(0xFFE3F2FD) 
-              : isHovering
-                  ? const Color(0xFFF5F5F5)
-                  : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: ListTile(
-          dense: true,
-          leading: Icon(
-            widget.icon, 
-            color: widget.isSelected 
-                ? const Color(0xFF0D47A1) 
-                : isHovering
-                    ? const Color(0xFF42A5F5)
-                    : Colors.grey[700],
-          ),
-          title: Text(
-            widget.title, 
-            style: TextStyle(
-              fontWeight: widget.isSelected ? FontWeight.bold : FontWeight.normal, 
-              color: widget.isSelected 
-                  ? const Color(0xFF0D47A1) 
-                  : isHovering
-                      ? const Color(0xFF42A5F5)
-                      : Colors.black87,
-            ),
-          ),
-          onTap: widget.onTap,
-        ),
-      ),
-    );
-  }
-}
-
-// Hover Card class for card hover effects
 class HoverCard extends StatefulWidget {
   final Widget child;
-  
-  const HoverCard({
-    required this.child,
-    super.key,
-  });
-  
+
+  const HoverCard({super.key, required this.child});
+
   @override
   State<HoverCard> createState() => _HoverCardState();
 }
 
 class _HoverCardState extends State<HoverCard> {
   bool _isHovering = false;
-  
+
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
@@ -839,20 +878,15 @@ class _HoverCardState extends State<HoverCard> {
       onExit: (_) => setState(() => _isHovering = false),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        curve: Curves.easeInOut,
-        transform: _isHovering 
-            ? (Matrix4.identity()..translate(0.0, -5.0))
-            : Matrix4.identity(),
         decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.grey.withOpacity(_isHovering ? 0.3 : 0.1),
-              spreadRadius: _isHovering ? 3 : 1,
-              blurRadius: _isHovering ? 10 : 5,
-              offset: Offset(0, _isHovering ? 5 : 2),
+              color: Colors.black.withOpacity(_isHovering ? 0.15 : 0.05),
+              blurRadius: _isHovering ? 12 : 4,
+              offset: Offset(0, _isHovering ? 6 : 2),
             ),
           ],
-          borderRadius: BorderRadius.circular(12),
         ),
         child: widget.child,
       ),
