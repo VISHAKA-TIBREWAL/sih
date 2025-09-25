@@ -108,7 +108,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 16),
                         // Role Dropdown
                         DropdownButtonFormField<String>(
-                          initialValue: _selectedRole,
+                          value: _selectedRole,
                           hint: const Text('Select your role'),
                           decoration: InputDecoration(
                             prefixIcon: Icon(Icons.work_outline, color: Colors.grey[600]),
